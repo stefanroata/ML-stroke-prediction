@@ -1,0 +1,700 @@
+---
+title: "Final Project"
+author: "Stefan-Cristian Roata, Zheng Zhiwei (Mike), Pon Lorngdy"
+date: "4/13/2021"
+output: html_document
+---
+
+The dataset (https://www.kaggle.com/fedesoriano/stroke-prediction-dataset) we have chosen is found on Kaggle and contains information about age, gender, bmi (and 7 other parameters) along with whether or not the patient has had a stroke. Each row in the dataset provides relevant information about each of the 5110 patients. For each patient, there are 12 attributes:
+
+* Unique id assigned to each patient;
+
+* Gender, which can be either male or female;
+
+* Age expressed in years;
+
+* Hypertension which takes in the value of 1 (have had) or 0 (never had);
+
+* Heart disease which takes in the value of 1(have had) or 0 (never had);
+
+* Whether the patient has been married before (true) or not (false);
+
+* Work type which has several options: self-employed, private, government job, children, never worked;
+
+* Type of residence: rural or urban;
+
+* Average glucose level in blood (in units);
+
+* The BMI (body mass index), measured in kg/m^2;
+
+* Smoking status ranging from ‘unknown’ to ‘never smoked’ to ‘smokes’;
+
+* Whether the patient has previously had a stroke (1) or not (0);
+
+
+The location where these data were collected, as well as the period of collection, remain undisclosed.
+
+
+The purpose of collection has to do with the fact that stroke is the 2nd leading cause of death globally, responsible for approximately 11% of total deaths, according to the World Health Organization (WHO).
+
+
+The dataset is under a licence called “Data files © Original Authors”, meaning that the dataset does not belong to the original uploader. The original source, as stated on Kaggle, is confidential and the use of this dataset is restricted to educational purposes only.
+
+
+```{r}
+# Reading in the data
+stroke <- read.csv("healthcare-dataset-stroke-data.csv")
+
+# Transforming bmi from character to numeric
+stroke$bmi <- as.numeric(stroke$bmi)
+```
+
+
+```{r}
+# DATA CLEANING
+sum(is.na(stroke$bmi))
+# Since we only have 201 observations for bmi that are NA 
+# (which is just 201/5110 * 100 = 3.93% of the total data entries),
+# we can then safely omit these rows when cleaning the data,
+
+stroke <- na.omit(stroke)
+# we have 4909 valid observations in the stroke dataset
+```
+
+
+
+## 1. Introduction
+
+**Outline your main research question.**
+
+Research Question: What are the variables that best allow us to predict stroke for an individual? Is it possible to predict stroke using these variables?
+
+## 2. EDA
+
+**Do some exploratory data analysis to tell an interesting story about your data. Instead of limiting yourself to relationships between just two variables, broaden the scope of your analysis and employ creative approaches that evaluate relationships between more than two variables.**
+
+We have done EDA in order to respond to the following subsidiary EDA questions about the dataset:
+
+**a. The dataset contains mostly binary variables. Is the dataset balanced with respect to these binary variables?**
+
+```{r}
+# GENDER
+barplot(table(stroke$gender),
+        ylim = c(0, 3000),
+        col = c("pink", "blue", "gray"),
+        main ="Barplot of Gender")
+# Roughly 2000 males and 3000 females and very few labled as "other"
+
+# HYPERTENSION
+barplot(table(stroke$hypertension),
+        ylim = c(0, 5000),
+        col = c("green","red"),
+        names = c("no hypertension", "hypertension"),
+        main ="Barplot of Hypertension")
+# A lot more people without hypertension that with hypertension, as would be expected in a normal population.
+
+# HEART_DISEASE
+barplot(table(stroke$heart_disease),
+        ylim = c(0, 5000),
+        col = c("green","red"),
+        names = c("no heart disease", "heart disease"),
+        main ="Barplot of Heart Disease")
+# Again, a lot more people without heart disease than with heart disease, which is a reasonable result.
+
+# EVER_MARRIED
+barplot(table(stroke$ever_married),
+        ylim = c(0, 4000),
+        col = c("red", "green"),
+        main = "Barplot of Ever Married")
+# We have more married people than not married, but the importance of this variable is unclear.
+
+# RESIDENCE_TYPE
+barplot(table(stroke$Residence_type),
+        ylim = c(0, 3000),
+        col = c("green", "gray"),
+        main = "Barplot of Residence Type")
+# The residence type is pretty even, half urban and half rural.
+
+# SMOKING STATUS
+barplot(table(stroke$smoking_status),
+        ylim = c(0, 2000),
+        cex.names = 0.71,
+        col = c("orange", "green", "red", "gray"),
+        main = "Barplot of Smoking Status")
+# Most people in this dataset either never smoked or their status is unknown. 
+# Less than 2000 people smoke or formerly smoked.
+
+# Finally, our main variable of interest:
+# STROKE:
+barplot(table(stroke$stroke),
+        ylim = c(0, 5000),
+        col = c("green", "red"),
+        names= c("no stroke", "stroke"),
+        main = "Barplot of Stroke")
+# This dataset seems to be a bit unbalanced in terms of how many people have had a stroke or not.
+# A lot more people have not ever suffered from a stroke than those who have. This is consistent with reality.
+```
+
+
+**b. Is there any natural segmentation between people who have had a stroke or not based on their lifestyle habits (e.g. Bmi, glucose level etc)?**
+
+We can do K-means clustering (in 3D) with the continuous variables :
+
+```{r}
+library(ggpubr)
+library(factoextra)
+select <- na.omit(stroke[, c("bmi", "age", "avg_glucose_level")])
+
+# SCALING VARIABLES
+select$bmi <- scale(select$bmi)
+select$age <- scale(select$age)
+select$avg_glucose_level <- scale(select$avg_glucose_level)
+
+select_matrix <- as.matrix(select)
+fviz_nbclust(select_matrix, kmeans, method = "wss") + geom_vline(xintercept = 4, linetype = 2)
+
+
+library(plotly)
+library(dplyr)
+select$cluster = factor(kmeans(select,4)$cluster)
+p <- plot_ly(select, x=~bmi, y=~age, 
+             z=~avg_glucose_level, color=~cluster) %>%
+  add_markers(size=1.5)
+htmltools::tagList(list(p))
+```
+
+There don't seem to be any prominent clusters of data, so there is no natural clustering between the participants of this study.
+
+
+**c. Is there any significant linear relationship between the continuous variables in this dataset (age, bmi, avg_glucose level)?**
+
+We can try to compute a scatterplot matrix in order to observe the relationships between the continuous variables in this dataset.
+
+```{r}
+library(GGally)
+stroke_continuous <- stroke[, c("age","bmi","avg_glucose_level")]
+stroke_continuous <- na.omit(stroke_continuous)
+ggpairs(stroke_continuous,ggplot2::aes(colour="red"))
+
+```
+
+There are no obvious strongly linear relationships between the continuous variables bmi, average glucose level and age. Thus, when we compute the model with stroke as dependent variable, we will not have to worry about multicollinearity. To be sure of that, let us compute the correlation matrix with the other numerical predictors included:
+
+```{r}
+stroke_1 <- stroke[, -c(1,2,6,7,8,11)]
+cor(stroke_1)
+```
+
+The strongest correlated variables seem to be bmi and age, and then age and hypertension.
+We can visualize these relationships more nicely in the following way:
+
+```{r}
+library(GGally)
+ggcorr(stroke[,-1])
+```
+
+We see that the highest correlation of stroke with another variable is that with age, even though they are only mildly (positively) correlated.
+
+
+**d. Are older people/people with higher bmis/people with higher average glucose level more likely to suffer from stroke? **
+
+* Are older people more likely to suffer from stroke?
+
+```{r}
+boxplot(age ~ stroke, 
+        data = stroke, 
+        main = "Boxplot of Age vs Stroke", 
+        col = c("green", "yellow"))
+```
+
+From this side-by-side boxplot, it seems like older people suffer from stroke more often than younger people, as we would expect in real life.
+
+
+* Are people with higher bmis more likely to suffer from stroke?
+
+```{r}
+boxplot(bmi ~ stroke, 
+        data = stroke, 
+        main = "Boxplot of bmi vs Stroke", 
+        col = c("lightblue", "blue"))
+```
+
+There does not seem to be a significant difference in the bmis of people who have had a stroke in the past or not, even though the distribution of the bmis of people who have not ever had a stroke contains far more outliers on the higher end than the distribution of the bmis of people who have had a stroke in the past.
+
+* Are people with higher average glucose levels likely to suffer from stroke?
+
+```{r}
+boxplot(avg_glucose_level ~ stroke, 
+        data = stroke, 
+        main = "Boxplot of Average Glucose Level vs Stroke", 
+        col = c("pink", "red"))
+```
+
+It seems that, in general, the people that have higher average blood glucose levels tend to suffer from stroke more often than people who have lower glucose levels.
+
+
+
+## 3. Research question
+
+**Use one of your research questions, or come up with a new one depending on feedback from the proposal. If applicable, perform a hypothesis test to answer your question. If you do, make sure to check any applicable assumptions. If you do not use a hypothesis test, use other means to show what answer the data provide.**
+
+Since our main research question is "What are the variables that best allow us to predict stroke for an individual?", we will try to do model selection using three methods:
+
+a. Lasso Regression with the most appropriate value for lambda
+
+b. Stepwise regression based on p-values
+
+* Backward Elimination
+
+* Forward Selection
+
+
+**Lasso Regression for Model Selection **
+
+* K-fold cross validation:
+
+```{r}
+library(glmnet)
+
+# Generating model matrix
+X <- model.matrix(stroke ~ gender + age + hypertension + heart_disease + ever_married + work_type + Residence_type + avg_glucose_level + bmi + smoking_status, data = stroke)[,-1]
+# `[,-1]` removes the first column: The first column corresponds to an intercept.
+# `glmnet` also adds an intercept, therefore we remove it here.
+
+# Finding the best value for lambda
+
+set.seed(1)
+cv_result <- cv.glmnet(x = X, y = stroke$stroke, family = "binomial", keep = TRUE)
+plot(cv_result)
+
+cat("The value of lambda the yielded the lowest mean-squared error:", cv_result$lambda.min)
+# The value of lambda the yielded the lowest mean-squared error: 0.001500674
+```
+
+
+* Doing the actual lasso regression
+```{r}
+lasso_fit <- glmnet(x = X, y = stroke$stroke, lambda = 0.001500674, family = "binomial")
+coef(lasso_fit)
+```
+
+
+Lasso Regression has discovered the following representative attributes:
+
+* age
+
+* hypertension
+
+* heart_disease
+
+* work_type
+
+* avg_glucose_level
+
+* smoking_status
+
+
+**Even though the coefficient for some classes of smoking_status or work_type has been set to 0, we decided we will incorporate into the model any discrete attribute that has at least one class whose coefficient is not 0.**
+
+
+**Backward Elimination Based on p-values:**
+
+```{r}
+back <- glm(stroke ~ 
+              gender + 
+              age + 
+              hypertension + 
+              heart_disease + 
+              work_type  + 
+              avg_glucose_level + 
+              smoking_status + 
+              ever_married + 
+              Residence_type + 
+              bmi, data = stroke)
+summary(back)
+# ELIMINATE GENDER FIRST
+```
+
+
+```{r}
+back <- glm(stroke ~ 
+              age + 
+              hypertension + 
+              heart_disease + 
+              work_type  + 
+              avg_glucose_level + 
+              smoking_status + 
+              ever_married + 
+              Residence_type + 
+              bmi, data = stroke)
+summary(back)
+# ELIMINATE SMOKING STATUS
+```
+
+```{r}
+back <- glm(stroke ~ 
+              age + 
+              hypertension + 
+              heart_disease + 
+              work_type  + 
+              avg_glucose_level + 
+              ever_married + 
+              Residence_type + 
+              bmi, data = stroke)
+summary(back)
+# ELIMINATE RESIDENCE TYPE
+```
+
+
+```{r}
+back <- glm(stroke ~ 
+              age + 
+              hypertension + 
+              heart_disease + 
+              work_type  + 
+              avg_glucose_level + 
+              ever_married + 
+              bmi, data = stroke)
+summary(back)
+# ELIMINATE BMI
+```
+
+```{r}
+back <- glm(stroke ~ 
+              age + 
+              hypertension + 
+              heart_disease + 
+              work_type  + 
+              avg_glucose_level + 
+              ever_married,
+              data = stroke)
+summary(back)
+```
+
+The model discovered by backward elimination based on p-values contains:
+
+* age
+
+* hypertension
+
+* heart_disease
+
+* work_type
+
+* avg_glucose_level
+
+* ever_married
+
+These results are quite different from the ones obtained via lasso.
+
+
+**Forward Selection based on p-values**
+
+```{r}
+# STEPWISE REGRESSION: FORWARD, BASED ON P-VALUE
+
+summary(glm(stroke ~ gender, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ age, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ hypertension, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ heart_disease, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ ever_married, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ work_type, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ Residence_type, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ avg_glucose_level, data = stroke, family = binomial(link = "logit")))$coefficients
+
+summary(glm(stroke ~ bmi, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ smoking_status, data = stroke, family = binomial(link = "logit")))$coefficients
+
+# AGE HAS THE LOWEST P-VALUE, SO WE WILL CHOOSE THAT
+
+
+```
+
+```{r}
+summary(glm(stroke ~ age + gender, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + heart_disease, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + ever_married, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + work_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + Residence_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + bmi, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + smoking_status, data = stroke, family = binomial(link = "logit")))$coefficients
+
+# AVG_GLUCOSE_LEVEL HAS THE LOWEST P-VALUE, SO WE WILL CHOOSE THAT
+```
+
+```{r}
+summary(glm(stroke ~ age + avg_glucose_level + gender, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + hypertension, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + heart_disease, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + ever_married, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + work_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + Residence_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + bmi, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + avg_glucose_level + smoking_status, data = stroke, family = binomial(link = "logit")))$coefficients
+
+# HYPERTENSION HAS THE LOWEST P-VALUE, SO WE WILL CHOOSE THAT
+
+```
+
+```{r}
+
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + gender, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + ever_married, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + work_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + Residence_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + bmi, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + smoking_status, data = stroke, family = binomial(link = "logit")))$coefficients
+
+# HEART DISEASE HAS THE LOWEST P-VALUE STILL LESS THAN 0.05
+```
+
+```{r}
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + gender, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + ever_married, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + work_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + Residence_type, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + bmi, data = stroke, family = binomial(link = "logit")))$coefficients
+summary(glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease + smoking_status, data = stroke, family = binomial(link = "logit")))$coefficients
+
+# NO OTHER PARAMETERS WITH P-VALUE LESS THAN 0.05. WE WILL STOP HERE.
+```
+
+
+Final model by forward selection based on p-values contains the following attributes:
+
+* age
+
+* hypertension
+
+* avg_glucose_level
+
+* heart_disease
+
+Since lasso, backward elimination and forward selection all yield different models, for the classification part we will stick to the results obtained via:
+
+* Lasso regression (more reliable)
+
+* Forward selection based on p-values (yields a minimal model)
+
+
+## 4. Prediction
+
+**Predict or classify one variable in your dataset from other variables. Motivate why you choose the outcome and its predictors. Evaluate the performance of your predictive model or the resulting classifier using appropriate metrics and visualizations. Remark: While the other parts of your presentation should nicely fit together as one whole, this prediction part might not fit as nicely, depending on your research question or data narrative. That is okay.**
+
+
+We have decided to implement 3 classifiers: logistic regression, decision trees and Naive Bayes. As we previously said, we will be using the attributes discovered from both lasso regression and forward selection, so we will end up doing 2 different logistic regressions, 2 different trees and 2 different Naive Bayes classifiers.
+
+
+**Logistic Regression**
+```{r}
+# LOGISTIC REGRESSION 1: BASED ON PARAMETERS DISCOVERED BY LASSO
+#age, 
+#hypertension, 
+#heart_disease, 
+#work_type, -
+#avg_glucose_level and 
+#smoking_status
+
+
+log_reg1 <- glm(stroke ~ age + hypertension + heart_disease + work_type + avg_glucose_level + smoking_status,
+                data = stroke,
+                family = binomial(link = "logit"))
+
+summary(log_reg1)
+
+library(ROCR)
+pred = predict(log_reg1, type="response")
+predObj = prediction(pred, stroke$stroke)
+rocObj = performance(predObj, measure="tpr", x.measure="fpr") 
+aucObj = performance(predObj, measure="auc")
+plot(rocObj, main = paste("Area under the curve:", round(aucObj@y.values[[1]] ,4)))
+
+
+pred2 = pred
+for (i in 1:4909){
+        if(pred2[i] > 0.5){
+                pred2[i] = 1
+        }
+        else{
+                pred2[i] = 0
+        }
+}
+pred2 <- factor(pred2)
+
+library(caret)
+confusionMatrix(pred2,factor(stroke$stroke),)
+
+```
+```{r}
+## NOTE: The confusionMatrix function in the caret package uses other formulas than the ones in the textbook for PPV, NPV, Prevalence etc. The only ones that are consistent with textbook are those for Sensitivty and Specificity. 
+## If one desires, the following website can be consulted for the exact formulas for the metrics that this function uses: https://www.rdocumentation.org/packages/caret/versions/6.0-86/topics/confusionMatrix
+```
+
+We have set the threshold at 0.5 when deciding whether someone is classified as having had a stroke or not.
+The accuracy of this model is very high at more than 95%, the sensitivity is 100%, the positive predictive value is also more than 95%, the area under the curve is 0.8526. 
+Nevertheless, these results are misleading and should not be taken into consideration, because our initial dataset contains too few instances of people who have had a stroke (only about 200). Basically, from the confusion matrix, we can see that every individual was classified as not having stroke, because more than 96% of the dataset is represented by people who didn't have a stroke. The rest of real 1's (about 4%) have been classified as 0 too. This is very problematic.
+
+We encounter the same problem with the second logistic model, based on the parameters discovered by forward selection:
+
+```{r}
+# LOGISTIC REGRESSION 2: BASED ON PARAMETERS DISCOVERED BY STEPWISE REGRESSION: FORWARD
+
+log_reg2 <- glm(stroke ~ age + hypertension + avg_glucose_level + heart_disease,
+                data = stroke,
+                family = binomial(link = "logit"))
+
+summary(log_reg2)
+
+library(ROCR)
+pred = predict(log_reg2, type="response")
+
+predObj = prediction(pred, stroke$stroke)
+rocObj = performance(predObj, measure="tpr", x.measure="fpr") 
+aucObj = performance(predObj, measure="auc")
+plot(rocObj, main = paste("Area under the curve:", round(aucObj@y.values[[1]] ,4)))
+
+pred2 = pred
+for (i in 1:4909){
+        if(pred2[i] > 0.5){
+                pred2[i] = 1
+        }
+        else{
+                pred2[i] = 0
+        }
+}
+pred2 <- factor(pred2)
+
+library(caret)
+confusionMatrix(pred2,factor(stroke$stroke))
+
+```
+The AUC is a bit smaller, but the accuracy, sensitivity and positive predicted value are very similar. Again, we should not take these results into consideration because the model literally classified every datapoint as 0.
+
+
+**Decision Tree **
+
+
+```{r}
+## DECISION TREE 1: USING THE PARAMETERS DISCOVERED BY LASSO
+library(rpart)
+library(rpart.plot)
+fit <- rpart(stroke ~ age + hypertension + heart_disease + work_type  + avg_glucose_level + smoking_status,
+             method ="class",
+             data = stroke, 
+             control=rpart.control(maxdepth=6,cp=0.001),
+             parms=list(split='information'))
+rpart.plot(fit, type=4, extra=2, clip.right.labs=FALSE, varlen=0, faclen=0)
+pred <-predict(object = fit, stroke, type = "class")
+t <- table(pred, stroke$stroke)
+confusionMatrix(t)
+
+```
+
+For this decision tree, the number of false positives is very low at 7. On the other hand, the number of true positives is relatively good at 12. This seems like a moderately good model in terms of performance, because the number of false negatives is a bit high at 197.
+
+In order to be classified as a positive, a person must be either:
+
+* older than 54 years, but younger than 65, with an average glucose level of 104 or more, currently a smoker, having heart disease or
+
+* older than 68, with an average glucose level of 231 or more, working for the government or at a private company, and having hypertension
+
+The positive predicted value is 95.9% (quite high) and the detection rate is 95.6%.
+
+NOTE : We have limited the depth of the tree to 6 to prevent overfitting. We also set the cp parameter to 0.001 so that any split must decrease the overall lack of fit by a factor of 0.001 before being attempted.
+
+
+
+
+
+```{r}
+## DECISION TREE 2: USING THE PARAMETERS DISCOVERED BY FORWARD SELECTION BASED ON P-VALUE
+library(rpart)
+library(rpart.plot)
+fit2 <- rpart(stroke ~ age + hypertension + heart_disease+ avg_glucose_level,
+             method ="class",
+             data = stroke, 
+             control=rpart.control(maxdepth=5,cp=0.001),
+             parms=list(split='information'))
+rpart.plot(fit2, type=4, extra=2, clip.right.labs=FALSE, varlen=0, faclen=0)
+pred <-predict(object = fit2, stroke, type = "class")
+t <- table(pred, stroke$stroke)
+confusionMatrix(t)
+
+```
+For the second decision tree, the situation is similar, in that the number of false positives is 3 and the number of true positives is 4.
+This seems like a moderately good model in terms of performance, because, again, the number of false negatives is high at 205.
+
+In order to be classified as a positive, a person must be older than 68, with an average glucose level between 127 and 132.
+
+The positive predicted value is 95.8% (quite high) and the detection rate is 95.6%.
+
+NOTE : We have limited the depth of the tree to 5 to prevent overfitting. We also set the cp parameter to 0.001 so that any split must decrease the overall lack of fit by a factor of 0.001 before being attempted.
+
+**Naive Bayes **
+
+Our second option was to do a Naive Bayes classifier, in the hope that we will obtain more reliable results:
+
+```{r}
+library(e1071)
+naive1 <- naiveBayes(stroke ~ age + hypertension + heart_disease + work_type  + avg_glucose_level + smoking_status, 
+           data = stroke, 
+           laplace = 0.01, 
+           na.action = na.pass)
+
+# NOTE: We CAN plug in numerical variables in the Naive Bayes classifier, not only categorical ones. 
+# From the documentation, the naiveBayes function uses the standard deviation of the numerical variable when computing probability scores, which seems like a reliable method.
+
+library(caTools)
+pred <-predict(object = naive1, stroke, type = "class")
+t <- table(pred, stroke$stroke)
+library(caret,quietly = TRUE)
+confusionMatrix(t)
+```
+
+The results from the first Naive Bayes classifier are indeed a lot more reliable. The model did classifiy some instances as 1, with 121 false negatives and 88 true positives. The accuracy is high at 87.6%, as well as the positive predictive value at 97%. The detection rate is 85%. All in all, this is a much better classifier than logistic regression.
+
+
+We also implemented another Naive Bayes classifier based on the minimal model discovered through forward selection based on p-values:
+
+```{r}
+naive2 <- naiveBayes(stroke ~ age + hypertension + avg_glucose_level + heart_disease, 
+                     data = stroke, 
+                     laplace = 0.01, 
+                     na.action = na.pass)
+pred <-predict(object = naive2, stroke, type = "class")
+t <- table(pred, stroke$stroke)
+confusionMatrix(t)
+```
+
+This model is comparable to the previous one. It yielded 124 false negatives and 85 true positives. The accuracy is 88.4%, and the positive predicted value is 97%. The detection rate is also higher at 86.68%.
+
+
+## 5. Conclusion
+
+**A brief summary of your findings from the previous sections without repeating your statements from earlier as well as a discussion of what you have learned about the data and your research question(s). You should also discuss any shortcomings of your current study, either due to data collection or methodology, and include ideas for possible future research.**
+
+**Findings:**
+
+* Curiously enough, bmi was not included in any classification model after feature selection, even though, from a practical perspective, we would expect it to be somewhat important.
+
+* Logistic regression yields very unreliable results for imbalanced datasets such as this one. All the metrics from the confusion matrix are artificial and should not be believed.
+
+* Naive Bayes Classifier and Decision Tree seems to be more robust to imbalance in the dataset, and are better predictive models for stroke in this context.
+
+**Future Directions:**
+
+* In order to build more meaningful models in the future, we could try to counter the imbalance in the dataset by oversampling the minority class (~ 200 people, i.e. the people who had a stroke) or downsampling the majority class (~ 4700 people, i.e. the people who have not had a stroke).
+
+
+
+
